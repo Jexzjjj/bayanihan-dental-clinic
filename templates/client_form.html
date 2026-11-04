@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% from "_macros.html" import field %}
+{% block title %}{{ 'Register client' if mode == 'new' else 'Edit client' }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>{{ 'Register client' if mode == 'new' else 'Edit client' }}</h1>
+</div>
+
+<div class="panel">
+  {# novalidate: server ang gumagawa ng validation para pare-pareho ang error messages #}
+  <form method="post" novalidate>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="then" value="{{ then }}">
+
+    {{ field('Full name', 'name', form.get('name', ''), required=true, maxlength=100, placeholder='e.g. Juan Dela Cruz') }}
+    {{ field('Contact number', 'contact', form.get('contact', ''), required=true, maxlength=20,
+             hint='Mobile or landline, 7 to 13 digits. Example: 09171234567', placeholder='09171234567') }}
+    {{ field('Email (optional)', 'email', form.get('email', ''), type='email', maxlength=100) }}
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">{{ 'Register client' if mode == 'new' else 'Save changes' }}</button>
+      <a class="btn" href="{{ url_for('clients_list') if mode == 'new' else url_for('clients_detail', client_id=client.client_id) }}">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

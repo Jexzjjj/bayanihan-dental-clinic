@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Reschedule Appointment{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Reschedule appointment #{{ appt.appointment_id }}</h1>
+</div>
+
+<div class="two-col">
+  <div class="panel">
+    <dl class="detail-list">
+      <dt>Client</dt><dd>{{ appt.client_name }}</dd>
+      <dt>Service</dt><dd>{{ appt.service_name }} ({{ appt.duration_minutes }} min)</dd>
+      <dt>Status</dt><dd><span class="badge badge-{{ appt.status|lower }}">{{ appt.status }}</span></dd>
+      <dt>Current slot</dt>
+      <dd>{{ appt.appt_date|fmt_date }}, {{ appt.start_time|fmt_time }} - {{ appt.end_time|fmt_time }} with {{ appt.resource_name }}</dd>
+    </dl>
+
+    <form method="post" novalidate>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="field">
+        <label for="resource_id">Staff / Resource <span class="req">*</span></label>
+        <select id="resource_id" name="resource_id">
+          {% for r in resources %}
+            <option value="{{ r.resource_id }}"{% if form.get('resource_id')|string == r.resource_id|string %} selected{% endif %}>{{ r.name }} ({{ r.role }})</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="appt_date">New date <span class="req">*</span></label>
+        <input type="date" id="appt_date" name="appt_date" value="{{ form.get('appt_date', '') }}" min="{{ today() }}">
+      </div>
+
+      <div class="field">
+        <label for="start_time">New start time <span class="req">*</span></label>
+        <select id="start_time" name="start_time">
+          <option value="">Choose a time...</option>
+          {% for t in time_slots %}
+            <option value="{{ t }}"{% if form.get('start_time') == t %} selected{% endif %}>{{ t|fmt_time }}</option>
+          {% endfor %}
+        </select>
+        <div class="hint" id="end-preview" data-duration="{{ appt.duration_minutes }}"></div>
+      </div>
+
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Save new schedule</button>
+        <a class="btn" href="{{ url_for('appointments_list') }}">Back</a>
+      </div>
+    </form>
+  </div>
+
+  {% set exclude_id = appt.appointment_id %}
+  {% include "_slots_panel.html" %}
+</div>
+{% endblock %}

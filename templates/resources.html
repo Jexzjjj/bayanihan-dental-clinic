@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Staff and Rooms{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Staff and rooms</h1>
+  <a class="btn btn-primary" href="{{ url_for('resources_new') }}">Add staff or room</a>
+</div>
+
+<div class="table-wrap">
+  <table class="data data-fixed">
+    <colgroup>
+      <col style="width: 26%">
+      <col style="width: 22%">
+      <col style="width: 14%">
+      <col style="width: 14%">
+      <col style="width: 24%">
+    </colgroup>
+    <thead>
+      <tr><th>Name</th><th>Role</th><th>Availability</th><th class="num">Appointments</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      {% for r in resources %}
+      <tr>
+        <td>{{ r.name }}</td>
+        <td>{{ r.role }}</td>
+        <td>{{ 'Active' if r.is_active else 'Inactive' }}</td>
+        <td class="num">{{ r.appt_count }}</td>
+        <td class="actions">
+          <a class="btn btn-sm" href="{{ url_for('resources_edit', resource_id=r.resource_id) }}">Edit</a>
+          <form method="post" action="{{ url_for('resources_delete', resource_id=r.resource_id) }}"
+                data-confirm="Delete {{ r.name }}? This cannot be undone.">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td class="empty" colspan="5">No staff or rooms yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="muted">Inactive staff and rooms no longer appear in new bookings, but their old appointments are kept.</p>
+{% endblock %}

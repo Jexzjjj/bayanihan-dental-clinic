@@ -1,0 +1,10 @@
+{# Reusable na form field para hindi paulit-ulit ang HTML sa bawat form #}
+{% macro field(label, name, value='', type='text', required=false, hint='', maxlength=none, placeholder='') %}
+<div class="field">
+  <label for="{{ name }}">{{ label }}{% if required %} <span class="req">*</span>{% endif %}</label>
+  <input type="{{ type }}" id="{{ name }}" name="{{ name }}" value="{{ value }}"
+         {% if maxlength %}maxlength="{{ maxlength }}"{% endif %}
+         {% if placeholder %}placeholder="{{ placeholder }}"{% endif %}>
+  {% if hint %}<div class="hint">{{ hint }}</div>{% endif %}
+</div>
+{% endmacro %}

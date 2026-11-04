@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Services{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Services</h1>
+  <a class="btn btn-primary" href="{{ url_for('services_new') }}">Add service</a>
+</div>
+
+<div class="table-wrap">
+  <table class="data data-fixed">
+    <colgroup>
+      <col style="width: 36%">
+      <col style="width: 20%">
+      <col style="width: 20%">
+      <col style="width: 24%">
+    </colgroup>
+    <thead>
+      <tr><th>Service</th><th class="num">Duration (minutes)</th><th class="num">Appointments</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      {% for s in services %}
+      <tr>
+        <td>{{ s.name }}</td>
+        <td class="num">{{ s.duration_minutes }}</td>
+        <td class="num">{{ s.appt_count }}</td>
+        <td class="actions">
+          <a class="btn btn-sm" href="{{ url_for('services_edit', service_id=s.service_id) }}">Edit</a>
+          <form method="post" action="{{ url_for('services_delete', service_id=s.service_id) }}"
+                data-confirm="Delete service {{ s.name }}? This cannot be undone.">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td class="empty" colspan="4">No services yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="muted">The duration of the service decides when a booking ends, and so which time slots it blocks.</p>
+{% endblock %}

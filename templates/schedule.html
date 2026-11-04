@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Day Schedule{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Day schedule</h1>
+  <span class="sub">{{ day|fmt_date }}</span>
+</div>
+
+<form class="grid-nav" method="get" action="{{ url_for('schedule_day') }}">
+  <div class="day-switch">
+    <a class="day-switch-btn" href="{{ url_for('schedule_day', date=prev_day) }}">Previous day</a>
+    <a class="day-switch-btn" href="{{ url_for('schedule_day', date=today()) }}">Today</a>
+    <a class="day-switch-btn" href="{{ url_for('schedule_day', date=next_day) }}">Next day</a>
+  </div>
+  <div class="field">
+    <label for="schedule-date" class="sr-only">Go to date</label>
+    <input type="date" id="schedule-date" name="date" value="{{ day }}">
+  </div>
+  <button type="submit" class="btn">Go</button>
+</form>
+
+{% if closed %}
+  <p class="muted">The clinic is closed on this day.</p>
+{% endif %}
+
+<div class="table-wrap">
+<table class="grid">
+  <thead>
+    <tr>
+      <th class="time-col">Time</th>
+      {% for r in resources %}
+        <th>{{ r.name }}<small>{{ r.role }}</small></th>
+      {% endfor %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in grid %}
+    <tr{% if row.time.endswith(':00') %} class="hour"{% endif %}>
+      <td class="time-col">{{ row.time|fmt_time }}</td>
+      {% for cell in row.cells %}
+        {% if cell.kind == 'appt' %}
+          {% set a = cell.appt %}
+          <td rowspan="{{ cell.span }}" class="cell-appt cell-{{ a.status|lower }}">
+            <a href="{% if a.status in ACTIVE_STATUSES %}{{ url_for('appointments_edit', appointment_id=a.appointment_id) }}{% else %}{{ url_for('appointments_history', appointment_id=a.appointment_id) }}{% endif %}"
+               title="{{ a.status }}: {{ a.start_time|fmt_time }} - {{ a.end_time|fmt_time }}">
+              <strong><span class="dot" aria-hidden="true"></span>{{ a.client_name }}</strong>
+              <small>{{ a.service_name }}</small>
+              <small>{{ a.status }}</small>
+            </a>
+          </td>
+        {% elif cell.kind == 'empty' %}
+          <td>
+            {% if can_book %}
+              <a class="slot-free" title="Book {{ row.time|fmt_time }}"
+                 href="{{ url_for('appointments_new', resource_id=cell.resource_id, appt_date=day, start_time=row.time) }}"></a>
+            {% endif %}
+          </td>
+        {% endif %}
+      {% endfor %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<div class="legend">
+  <span class="badge badge-pending">Pending</span>
+  <span class="badge badge-confirmed">Confirmed</span>
+  <span class="badge badge-completed">Completed</span>
+  <span class="muted">Click a booking to reschedule it, or click an empty slot to book it. Cancelled appointments are not shown because they no longer block the slot.</span>
+</div>
+{% endblock %}

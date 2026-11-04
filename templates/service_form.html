@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% from "_macros.html" import field %}
+{% block title %}{{ 'Add service' if mode == 'new' else 'Edit service' }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>{{ 'Add service' if mode == 'new' else 'Edit service' }}</h1>
+</div>
+
+<div class="panel">
+  <form method="post" novalidate>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    {{ field('Service name', 'name', form.get('name', ''), required=true, maxlength=80, placeholder='e.g. Oral Prophylaxis (Cleaning)') }}
+
+    <div class="field">
+      <label for="duration_minutes">Duration <span class="req">*</span></label>
+      <select id="duration_minutes" name="duration_minutes">
+        {% for minutes in range(30, 241, 30) %}
+          <option value="{{ minutes }}"{% if form.get('duration_minutes')|string == minutes|string %} selected{% endif %}>{{ minutes }} minutes</option>
+        {% endfor %}
+      </select>
+      <div class="hint">Durations are in 30-minute steps so they fit the schedule grid.</div>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">{{ 'Add service' if mode == 'new' else 'Save changes' }}</button>
+      <a class="btn" href="{{ url_for('services_list') }}">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

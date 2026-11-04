@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Appointment History{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>History of appointment #{{ appt.appointment_id }}</h1>
+</div>
+
+<dl class="detail-list">
+  <dt>Client</dt><dd><a href="{{ url_for('clients_detail', client_id=appt.client_id) }}">{{ appt.client_name }}</a></dd>
+  <dt>Service</dt><dd>{{ appt.service_name }}</dd>
+  <dt>Slot</dt><dd>{{ appt.appt_date|fmt_date }}, {{ appt.start_time|fmt_time }} - {{ appt.end_time|fmt_time }} with {{ appt.resource_name }}</dd>
+  <dt>Status</dt><dd><span class="badge badge-{{ appt.status|lower }}">{{ appt.status }}</span></dd>
+  {% if appt.notes %}<dt>Notes</dt><dd>{{ appt.notes }}</dd>{% endif %}
+</dl>
+
+<div class="table-wrap">
+  <table class="data">
+    <thead><tr><th>When</th><th>Action</th><th>From</th><th>To</th></tr></thead>
+    <tbody>
+      {% for h in history %}
+      <tr>
+        <td>{{ h.changed_at }}</td>
+        <td>{{ h.action }}</td>
+        <td>{{ h.old_value or '-' }}</td>
+        <td>{{ h.new_value or '-' }}</td>
+      </tr>
+      {% else %}
+      <tr><td class="empty" colspan="4">No history recorded.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<p><a href="{{ url_for('appointments_list') }}">Back to appointments</a></p>
+{% endblock %}

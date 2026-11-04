@@ -1,0 +1,84 @@
+{# Table ng appointments na ginagamit sa dashboard, listahan, at client page #}
+{% macro appt_table(rows, next_url, show_date=true, show_client=true, empty_text='No appointments found.') %}
+<div class="table-wrap">
+  <table class="data">
+    <thead>
+      <tr>
+        {% if show_date %}<th>Date</th>{% endif %}
+        <th>Time</th>
+        {% if show_client %}<th>Client</th>{% endif %}
+        <th>Staff / Resource</th>
+        <th>Service</th>
+        <th>Status</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in rows %}
+      <tr{% if a.status == 'Cancelled' %} class="row-cancelled"{% endif %}>
+        {% if show_date %}<td>{{ a.appt_date|fmt_date }}</td>{% endif %}
+        <td>{{ a.start_time|fmt_time }} - {{ a.end_time|fmt_time }}</td>
+        {% if show_client %}
+          <td class="strike"><a href="{{ url_for('clients_detail', client_id=a.client_id) }}">{{ a.client_name }}</a></td>
+        {% endif %}
+        <td>{{ a.resource_name }}</td>
+        <td class="strike">{{ a.service_name }}</td>
+        <td><span class="badge badge-{{ a.status|lower }}">{{ a.status }}</span></td>
+        <td class="actions">
+          {% set ns = namespace(primary=None) %}
+          {% set candidate = PRIMARY_NEXT_STATUS.get(a.status) %}
+          {% if candidate and candidate in STATUS_FLOW[a.status] and not (candidate == 'Completed' and a.appt_date > today()) %}
+            {% set ns.primary = candidate %}
+          {% endif %}
+
+          {% if ns.primary %}
+            <form method="post" action="{{ url_for('appointments_status', appointment_id=a.appointment_id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="status" value="{{ ns.primary }}">
+              <input type="hidden" name="next" value="{{ next_url }}">
+              <button type="submit" class="btn btn-sm btn-primary">{{ ACTION_LABELS[ns.primary] }}</button>
+            </form>
+          {% endif %}
+
+          {% if a.status in ACTIVE_STATUSES %}
+            {# Pending/Confirmed rows can have several more actions: tuck them behind "More" #}
+            <details class="menu">
+              <summary class="btn btn-sm" aria-label="More actions for {{ a.client_name }}">More &#9662;</summary>
+              <div class="menu-panel">
+                {% for nxt in STATUS_FLOW[a.status] %}
+                  {% if nxt != ns.primary and not (nxt == 'Completed' and a.appt_date > today()) %}
+                  <form method="post" action="{{ url_for('appointments_status', appointment_id=a.appointment_id) }}"
+                        {% if nxt == 'Cancelled' %}data-confirm="Cancel the appointment of {{ a.client_name }} on {{ a.appt_date|fmt_date }}, {{ a.start_time|fmt_time }}?"{% endif %}>
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="status" value="{{ nxt }}">
+                    <input type="hidden" name="next" value="{{ next_url }}">
+                    <button type="submit" class="menu-item{% if nxt == 'Cancelled' %} menu-item-danger{% endif %}">{{ ACTION_LABELS[nxt] }}</button>
+                  </form>
+                  {% endif %}
+                {% endfor %}
+                <a class="menu-item" href="{{ url_for('appointments_edit', appointment_id=a.appointment_id) }}">Reschedule</a>
+                <a class="menu-item" href="{{ url_for('appointments_history', appointment_id=a.appointment_id) }}">History</a>
+              </div>
+            </details>
+          {% elif a.status == 'Cancelled' %}
+            {# only two things possible here: no need to hide them behind a menu #}
+            <a class="link-sm" href="{{ url_for('appointments_history', appointment_id=a.appointment_id) }}">History</a>
+            <form method="post" action="{{ url_for('appointments_delete', appointment_id=a.appointment_id) }}"
+                  data-confirm="Permanently delete this cancelled appointment? This cannot be undone.">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="next" value="{{ next_url }}">
+              <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+            </form>
+          {% else %}
+            {# Completed: nothing left to do but look back at it #}
+            <a class="link-sm" href="{{ url_for('appointments_history', appointment_id=a.appointment_id) }}">History</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td class="empty" colspan="{{ 5 + (1 if show_date else 0) + (1 if show_client else 0) }}">{{ empty_text }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endmacro %}

@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% from "_appt_table.html" import appt_table %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Dashboard</h1>
+  <span class="sub">{{ today()|fmt_date }}</span>
+</div>
+
+<div class="summary">
+  <div class="summary-item"><div class="summary-num">{{ todays|length }}</div><div class="summary-label">Appointments today</div></div>
+  {% for status in STATUSES %}
+  <div class="summary-item">
+    <div class="summary-num">{{ counts[status] }}</div>
+    <div class="summary-label">{{ status }} today</div>
+  </div>
+  {% endfor %}
+  <div class="summary-item"><div class="summary-num">{{ next_week }}</div><div class="summary-label">Active, next 7 days</div></div>
+</div>
+
+<section class="section">
+  <div class="page-head">
+    <h2>Today's appointments</h2>
+    <a class="btn btn-primary" href="{{ url_for('appointments_new') }}">New booking</a>
+  </div>
+  {{ appt_table(todays, next_url, show_date=false, empty_text='No appointments scheduled for today.') }}
+</section>
+
+<section class="section">
+  <div class="page-head">
+    <h2>Waiting for confirmation</h2>
+    <a href="{{ url_for('appointments_list', status='Pending') }}">See all pending</a>
+  </div>
+  {{ appt_table(waiting, next_url, empty_text='Nothing is waiting for confirmation.') }}
+</section>
+{% endblock %}

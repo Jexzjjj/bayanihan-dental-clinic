@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% from "_appt_table.html" import appt_table %}
+{% block title %}Appointments{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Appointments</h1>
+  <a class="btn btn-primary" href="{{ url_for('appointments_new') }}">New booking</a>
+</div>
+
+<form class="filters" method="get" action="{{ url_for('appointments_list') }}">
+  <div class="field">
+    <label for="q">Client name</label>
+    <input type="search" id="q" name="q" value="{{ filters.q }}" placeholder="Search client">
+  </div>
+  <div class="field">
+    <label for="appt-date">Date</label>
+    <input type="date" id="appt-date" name="date" value="{{ filters.date }}">
+  </div>
+  <div class="field">
+    <label for="status">Status</label>
+    <select id="status" name="status">
+      <option value="">All statuses</option>
+      {%- for s in STATUSES -%}
+        <option value="{{ s }}"{% if filters.status == s %} selected{% endif %}>{{ s }}</option>
+      {%- endfor -%}
+    </select>
+  </div>
+  <div class="field">
+    <label for="resource_id">Staff / Resource</label>
+    <select id="resource_id" name="resource_id">
+      <option value="">All</option>
+      {%- for r in resources -%}
+        <option value="{{ r.resource_id }}"{% if filters.resource_id|string == r.resource_id|string %} selected{% endif %}>{{ r.name }}</option>
+      {%- endfor -%}
+    </select>
+  </div>
+  <div class="filters-actions">
+    <button type="submit" class="btn btn-primary">Filter</button>
+    <a class="btn" href="{{ url_for('appointments_list', date=today()) }}">Today</a>
+    {% if has_filters %}<a class="btn" href="{{ url_for('appointments_list') }}">Clear</a>{% endif %}
+  </div>
+</form>
+
+<p class="result-count">{{ total_count }} appointment{{ '' if total_count == 1 else 's' }}{% if has_filters %} found{% endif %}</p>
+{{ appt_table(rows, next_url, empty_text='No appointments match these filters.') }}
+
+{% if total_pages > 1 %}
+<div class="pagination">
+  {% if pg_prev_url %}<a class="day-switch-btn" href="{{ pg_prev_url }}">Previous</a>
+  {% else %}<span class="day-switch-btn is-disabled">Previous</span>{% endif %}
+  <span class="pagination-status">Page {{ page }} of {{ total_pages }}</span>
+  {% if pg_next_url %}<a class="day-switch-btn" href="{{ pg_next_url }}">Next</a>
+  {% else %}<span class="day-switch-btn is-disabled">Next</span>{% endif %}
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,16 @@
+{# "Already booked" panel; unang laman galing sa server, tapos JavaScript na ang nag-a-update #}
+<aside class="panel" id="slots-panel" data-api="{{ url_for('api_booked_slots') }}"
+       data-exclude="{{ exclude_id or '' }}">
+  <h2>Already booked</h2>
+  <div class="muted" id="slots-heading">{{ slots_heading }}</div>
+  <ul class="slot-list" id="slots-list">
+    {% for s in slots %}
+    <li>
+      <span class="slot-time">{{ s.start_time|fmt_time }} to {{ s.end_time|fmt_time }}</span>
+      <span class="slot-meta">{{ s.client_name }} / {{ s.service_name }}
+        <span class="badge badge-{{ s.status|lower }}">{{ s.status }}</span></span>
+    </li>
+    {% endfor %}
+  </ul>
+  <div class="muted" id="slots-note">{{ slots_note }}</div>
+</aside>

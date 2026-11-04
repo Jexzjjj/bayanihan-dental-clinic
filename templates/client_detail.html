@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% from "_appt_table.html" import appt_table %}
+{% block title %}{{ client.name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>{{ client.name }}</h1>
+  <div>
+    <a class="btn btn-primary" href="{{ url_for('appointments_new', client_id=client.client_id) }}">Book appointment</a>
+    <a class="btn" href="{{ url_for('clients_edit', client_id=client.client_id) }}">Edit</a>
+  </div>
+</div>
+
+<dl class="detail-list">
+  <dt>Contact</dt><dd>{{ client.contact }}</dd>
+  <dt>Email</dt><dd>{{ client.email or '-' }}</dd>
+  <dt>Registered</dt><dd>{{ client.created_at }}</dd>
+</dl>
+
+<h2>Appointments</h2>
+{{ appt_table(appointments, next_url, show_client=false, empty_text='This client has no appointments yet.') }}
+
+<p><a href="{{ url_for('clients_list') }}">Back to clients</a></p>
+{% endblock %}

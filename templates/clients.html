@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Clients{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Clients</h1>
+  <a class="btn btn-primary" href="{{ url_for('clients_new') }}">Register client</a>
+</div>
+
+<form class="filters" method="get" action="{{ url_for('clients_list') }}">
+  <div class="field">
+    <label for="q">Search by name or contact</label>
+    <input type="search" id="q" name="q" value="{{ q }}">
+  </div>
+  <button type="submit" class="btn">Search</button>
+  {% if q %}<a class="btn" href="{{ url_for('clients_list') }}">Clear</a>{% endif %}
+</form>
+
+<p class="result-count">{{ clients|length }} client{{ '' if clients|length == 1 else 's' }}{% if q %} matching "{{ q }}"{% endif %}</p>
+
+<div class="table-wrap">
+  <table class="data data-fixed">
+    <colgroup>
+      <col style="width: 17%">
+      <col style="width: 12%">
+      <col style="width: 26%">
+      <col style="width: 13%">
+      <col style="width: 32%">
+    </colgroup>
+    <thead>
+      <tr><th>Name</th><th>Contact</th><th>Email</th><th class="num">Appointments</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      {% for c in clients %}
+      <tr>
+        <td><a href="{{ url_for('clients_detail', client_id=c.client_id) }}">{{ c.name }}</a></td>
+        <td>{{ c.contact }}</td>
+        <td>{{ c.email or '-' }}</td>
+        <td class="num">{{ c.appt_count }}</td>
+        <td class="actions">
+          <a class="btn btn-sm btn-primary" href="{{ url_for('appointments_new', client_id=c.client_id) }}">Book</a>
+          <a class="btn btn-sm" href="{{ url_for('clients_edit', client_id=c.client_id) }}">Edit</a>
+          <form method="post" action="{{ url_for('clients_delete', client_id=c.client_id) }}"
+                data-confirm="Delete client {{ c.name }}? This cannot be undone.">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td class="empty" colspan="5">No clients found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

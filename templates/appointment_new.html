@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}New Booking{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>New booking</h1>
+</div>
+
+<div class="two-col">
+  <div class="panel">
+    <form method="post" novalidate>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="field">
+        <label for="client_id">Client <span class="req">*</span></label>
+        <select id="client_id" name="client_id">
+          <option value="">Choose a client...</option>
+          {% for c in clients %}
+            <option value="{{ c.client_id }}"{% if form.get('client_id')|string == c.client_id|string %} selected{% endif %}>{{ c.name }}</option>
+          {% endfor %}
+        </select>
+        <div class="hint">Not registered yet? <a href="{{ url_for('clients_new', then='book') }}">Register the client first</a>.</div>
+      </div>
+
+      <div class="field">
+        <label for="service_id">Service <span class="req">*</span></label>
+        <select id="service_id" name="service_id">
+          <option value="">Choose a service...</option>
+          {% for s in services %}
+            <option value="{{ s.service_id }}" data-duration="{{ s.duration_minutes }}"{% if form.get('service_id')|string == s.service_id|string %} selected{% endif %}>{{ s.name }} ({{ s.duration_minutes }} min)</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="resource_id">Staff / Resource <span class="req">*</span></label>
+        <select id="resource_id" name="resource_id">
+          <option value="">Choose staff or room...</option>
+          {% for r in resources %}
+            <option value="{{ r.resource_id }}"{% if form.get('resource_id')|string == r.resource_id|string %} selected{% endif %}>{{ r.name }} ({{ r.role }})</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="appt_date">Date <span class="req">*</span></label>
+        <input type="date" id="appt_date" name="appt_date" value="{{ form.get('appt_date', '') }}" min="{{ today() }}">
+        <div class="hint">The clinic is closed on Sundays.</div>
+      </div>
+
+      <div class="field">
+        <label for="start_time">Start time <span class="req">*</span></label>
+        <select id="start_time" name="start_time">
+          <option value="">Choose a time...</option>
+          {% for t in time_slots %}
+            <option value="{{ t }}"{% if form.get('start_time') == t %} selected{% endif %}>{{ t|fmt_time }}</option>
+          {% endfor %}
+        </select>
+        <div class="hint" id="end-preview"></div>
+      </div>
+
+      <div class="field">
+        <label for="notes">Notes (optional)</label>
+        <textarea id="notes" name="notes" maxlength="300">{{ form.get('notes', '') }}</textarea>
+      </div>
+
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Book appointment</button>
+        <a class="btn" href="{{ url_for('appointments_list') }}">Cancel</a>
+      </div>
+    </form>
+  </div>
+
+  {% set exclude_id = None %}
+  {% include "_slots_panel.html" %}
+</div>
+{% endblock %}

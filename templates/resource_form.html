@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% from "_macros.html" import field %}
+{% block title %}{{ 'Add staff or room' if mode == 'new' else 'Edit staff or room' }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>{{ 'Add staff or room' if mode == 'new' else 'Edit staff or room' }}</h1>
+</div>
+
+<div class="panel">
+  <form method="post" novalidate>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    {{ field('Name', 'name', form.get('name', ''), required=true, maxlength=60, placeholder='e.g. Dr. Maria Santos') }}
+
+    <div class="field">
+      <label for="role">Role <span class="req">*</span></label>
+      <select id="role" name="role">
+        <option value="">Choose a role...</option>
+        {% for role in ['Dentist', 'Dental Hygienist', 'Room / Equipment'] %}
+          <option value="{{ role }}"{% if form.get('role') == role %} selected{% endif %}>{{ role }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="field field-inline">
+      <label for="is_active">
+        <input type="checkbox" id="is_active" name="is_active" value="1"{% if form.get('is_active') %} checked{% endif %}>
+        Active (can be booked)
+      </label>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">{{ 'Add' if mode == 'new' else 'Save changes' }}</button>
+      <a class="btn" href="{{ url_for('resources_list') }}">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}
