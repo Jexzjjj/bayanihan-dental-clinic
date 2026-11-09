@@ -4,7 +4,8 @@
   <label for="{{ name }}">{{ label }}{% if required %} <span class="req">*</span>{% endif %}</label>
   <input type="{{ type }}" id="{{ name }}" name="{{ name }}" value="{{ value }}"
          {% if maxlength %}maxlength="{{ maxlength }}"{% endif %}
-         {% if placeholder %}placeholder="{{ placeholder }}"{% endif %}>
+         {% if placeholder %}placeholder="{{ placeholder }}"{% endif %}
+         {% if required %}required aria-required="true"{% endif %}>
   {% if hint %}<div class="hint">{{ hint }}</div>{% endif %}
 </div>
 {% endmacro %}

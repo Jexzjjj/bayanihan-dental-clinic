@@ -56,10 +56,8 @@ def find_conflict(conn, resource_id, appt_date, start_time, end_time, exclude_id
 def booked_slots(conn, resource_id, appt_date, exclude_id=None):
     """Lahat ng active na booking ng isang resource sa isang araw (pang-display sa booking page)."""
     sql = """
-        SELECT a.appointment_id, a.start_time, a.end_time, a.status,
-               c.name AS client_name, s.name AS service_name
+        SELECT a.start_time, a.end_time, a.status, s.name AS service_name
         FROM appointments a
-        JOIN clients c ON c.client_id = a.client_id
         JOIN services s ON s.service_id = a.service_id
         WHERE a.resource_id = ?
           AND a.appt_date = ?
@@ -134,9 +132,11 @@ def book_appointment(conn, client_id, resource_id, service_id, appt_date, start_
 
         cursor = conn.execute(
             "INSERT INTO appointments "
-            "(client_id, resource_id, service_id, appt_date, start_time, end_time, status, notes) "
-            "VALUES (?, ?, ?, ?, ?, ?, 'Pending', ?)",
-            (client_id, resource_id, service_id, appt_date, start_time, end_time, notes or None),
+            "(client_id, resource_id, service_id, appt_date, start_time, end_time, "
+            "duration_minutes, status, notes) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, 'Pending', ?)",
+            (client_id, resource_id, service_id, appt_date, start_time, end_time,
+             service["duration_minutes"], notes or None),
         )
         appointment_id = cursor.lastrowid
         _log(conn, appointment_id, "Created", None,
@@ -154,7 +154,7 @@ def reschedule_appointment(conn, appointment_id, resource_id, appt_date, start_t
     with transaction(conn):
         current = conn.execute(
             """
-            SELECT a.*, s.name AS service_name, s.duration_minutes, r.name AS resource_name
+            SELECT a.*, s.name AS service_name, r.name AS resource_name
             FROM appointments a
             JOIN services s ON s.service_id = a.service_id
             JOIN staff_or_resources r ON r.resource_id = a.resource_id
@@ -201,14 +201,16 @@ def reschedule_appointment(conn, appointment_id, resource_id, appt_date, start_t
 
 
 # ----------------------------------------------------------------- status
-def change_status(conn, appointment_id, new_status):
+def change_status(conn, appointment_id, new_status, now=None):
     """Palitan ang status ayon sa config.STATUS_FLOW. Ibinabalik ang (luma, bago)."""
+    now = now or datetime.now()
     if new_status not in config.STATUSES:
         raise ScheduleError("Unknown status.")
 
     with transaction(conn):
         current = conn.execute(
-            "SELECT status, appt_date FROM appointments WHERE appointment_id = ?", (appointment_id,)
+            "SELECT status, appt_date, end_time FROM appointments WHERE appointment_id = ?",
+            (appointment_id,),
         ).fetchone()
         if current is None:
             raise ScheduleError("Appointment not found.")
@@ -218,8 +220,12 @@ def change_status(conn, appointment_id, new_status):
             raise ScheduleError(f"An appointment that is {old_status} cannot be changed to {new_status}.")
 
         # hindi pwedeng i-complete ang appointment na hindi pa nangyayari
-        if new_status == "Completed" and current["appt_date"] > datetime.now().date().isoformat():
-            raise ScheduleError("A future appointment cannot be marked as Completed.")
+        if new_status == "Completed":
+            today = now.date().isoformat()
+            if current["appt_date"] > today:
+                raise ScheduleError("A future appointment cannot be marked as Completed.")
+            if current["appt_date"] == today and current["end_time"] > now.strftime("%H:%M"):
+                raise ScheduleError("An appointment cannot be marked as Completed before its scheduled end time.")
 
         conn.execute("UPDATE appointments SET status = ? WHERE appointment_id = ?",
                      (new_status, appointment_id))

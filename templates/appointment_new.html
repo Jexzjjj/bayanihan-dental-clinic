@@ -13,7 +13,7 @@
 
       <div class="field">
         <label for="client_id">Client <span class="req">*</span></label>
-        <select id="client_id" name="client_id">
+        <select id="client_id" name="client_id" required aria-required="true">
           <option value="">Choose a client...</option>
           {% for c in clients %}
             <option value="{{ c.client_id }}"{% if form.get('client_id')|string == c.client_id|string %} selected{% endif %}>{{ c.name }}</option>
@@ -24,7 +24,7 @@
 
       <div class="field">
         <label for="service_id">Service <span class="req">*</span></label>
-        <select id="service_id" name="service_id">
+        <select id="service_id" name="service_id" required aria-required="true">
           <option value="">Choose a service...</option>
           {% for s in services %}
             <option value="{{ s.service_id }}" data-duration="{{ s.duration_minutes }}"{% if form.get('service_id')|string == s.service_id|string %} selected{% endif %}>{{ s.name }} ({{ s.duration_minutes }} min)</option>
@@ -34,7 +34,7 @@
 
       <div class="field">
         <label for="resource_id">Staff / Resource <span class="req">*</span></label>
-        <select id="resource_id" name="resource_id">
+        <select id="resource_id" name="resource_id" required aria-required="true">
           <option value="">Choose staff or room...</option>
           {% for r in resources %}
             <option value="{{ r.resource_id }}"{% if form.get('resource_id')|string == r.resource_id|string %} selected{% endif %}>{{ r.name }} ({{ r.role }})</option>
@@ -44,13 +44,13 @@
 
       <div class="field">
         <label for="appt_date">Date <span class="req">*</span></label>
-        <input type="date" id="appt_date" name="appt_date" value="{{ form.get('appt_date', '') }}" min="{{ today() }}">
+        <input type="date" id="appt_date" name="appt_date" value="{{ form.get('appt_date', '') }}" min="{{ today() }}" required aria-required="true">
         <div class="hint">The clinic is closed on Sundays.</div>
       </div>
 
       <div class="field">
         <label for="start_time">Start time <span class="req">*</span></label>
-        <select id="start_time" name="start_time">
+        <select id="start_time" name="start_time" required aria-required="true">
           <option value="">Choose a time...</option>
           {% for t in time_slots %}
             <option value="{{ t }}"{% if form.get('start_time') == t %} selected{% endif %}>{{ t|fmt_time }}</option>

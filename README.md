@@ -11,14 +11,27 @@ pip install -r requirements.txt
 python app.py
 ```
 
-Open http://127.0.0.1:5000. On the first run the app creates `appointments.db` and fills it with sample data, so the dashboard is not empty.
+Open http://127.0.0.1:5000. If the configured database does not exist, the app creates it with demo data. Existing database files are preserved and receive only safe, additive schema migrations.
+
+### Environment configuration
+
+| Variable | Purpose |
+|---|---|
+| `APPOINTMENT_DB` | SQLite database path (defaults to `appointments.db` in the project directory) |
+| `SECRET_KEY` | Stable, random secret for signed sessions; set this for deployments and shared workers |
+| `FLASK_DEBUG` | Enables Flask debug mode only when explicitly set to `1`, `true`, or `yes` |
+| `SESSION_COOKIE_SECURE` | Set to `1` behind HTTPS so browsers send the session cookie only over TLS |
+
+The app generates a random secret for local development if `SECRET_KEY` is unset. That local session key changes on restart; configure a persistent secret before deployment. Session cookies are HTTP-only and use `SameSite=Lax`.
 
 | Command | What it does |
 |---|---|
-| `python app.py` | Start the app (debug mode) |
-| `flask --app app init-db` | Reset the database with sample data |
-| `flask --app app init-db --no-seed` | Reset to an empty database |
+| `python app.py` | Start the app (debug mode is off unless explicitly enabled) |
+| `flask --app app init-db` | **Destructively reset** the configured database with sample data |
+| `flask --app app init-db --no-seed` | **Destructively reset** the configured database to an empty database |
 | `python -m unittest -v` | Run the automated tests (uses a temporary database) |
+
+Back up the configured database before either `init-db` command. Do not point tests at the working clinic database.
 
 ## Required features and where they live
 
@@ -30,7 +43,7 @@ Open http://127.0.0.1:5000. On the first run the app creates `appointments.db` a
 | Reschedule | `/appointments/<id>/edit` |
 | Cancel | "Cancel" button in any appointment row |
 | Update status | Buttons in each row: Confirm, Mark Completed, Cancel, Set to Pending |
-| Prevent double booking | `scheduling.find_conflict()` plus a database unique index |
+| Prevent double booking | `scheduling.find_conflict()` plus SQLite overlap triggers and a unique index |
 | Cancelled does not block the slot | The conflict query ignores `status = 'Cancelled'` |
 
 ## Pages
@@ -79,7 +92,7 @@ validators.py     All input validation
 formatting.py     Date and time display helpers
 seed.py           Sample data (dates are relative to today)
 schema.sql        CREATE TABLE statements
-test_app.py       47 automated tests
+test_app.py       Automated tests using disposable databases
 templates/        Jinja HTML pages
 static/           style.css, app.js, favicon.svg
 ```
@@ -92,14 +105,14 @@ staff_or_resources (resource_id PK, name UNIQUE, role, is_active)
 services (service_id PK, name UNIQUE, duration_minutes)
 appointments (appointment_id PK,
               client_id FK -> clients, resource_id FK -> staff_or_resources,
-              service_id FK -> services,
+              service_id FK -> services, duration_minutes snapshot,
               appt_date, start_time, end_time, status CHECK(...), notes, created_at)
 appointment_history (history_id PK, appointment_id FK -> appointments ON DELETE CASCADE,
                      action, old_value, new_value, changed_at)
 ```
 
 - Foreign keys are enforced (`PRAGMA foreign_keys = ON` on every connection) and use `ON DELETE RESTRICT`, so records that are still in use cannot be deleted by accident.
-- `CHECK` constraints protect `status`, the date and time formats, `end_time > start_time` and the service duration.
+- `CHECK` constraints and triggers protect real calendar dates, 24-hour half-hour times, `end_time > start_time`, service duration snapshots, and valid statuses.
 - Dates are stored as `YYYY-MM-DD` and times as 24-hour `HH:MM` text, so `<`, `>` and `ORDER BY` work correctly.
 - Listings use `JOIN` across all four tables.
 
@@ -120,7 +133,10 @@ WHERE resource_id = ? AND appt_date = ?
 - Back-to-back bookings are allowed (10:00 to 11:00, then 11:00 to 12:00).
 - Cancelled appointments are ignored, so cancelling frees the slot immediately.
 - The end time is computed from the service duration, never typed by the user.
-- A partial unique index (`uq_active_slot`) in `schema.sql` is a second line of defense inside the database.
+- Each appointment stores a duration snapshot. Editing a service affects future bookings; existing appointments retain their original duration and end time, including when rescheduled.
+- A partial unique index (`uq_active_slot`) quickly rejects identical start times.
+- SQLite triggers reject every overlapping active interval on inserts and schedule updates, including direct SQL writes. Cancelled appointments are excluded.
+- Existing databases are checked for overlaps before these guards are installed. Startup stops with a clear error if overlaps already exist; the migration does not alter appointments to resolve them.
 
 ## The transaction beyond basic CRUD
 
@@ -141,13 +157,19 @@ Booking (`book_appointment`) and status changes (`change_status`) use the same p
 - Required fields, formats and lengths for every form (`validators.py`)
 - Date not in the past, not a Sunday, not more than a year ahead; time must be a valid slot and not already passed today
 - Booking cannot run past closing time
-- Status changes follow `STATUS_FLOW` in `config.py` (for example Completed and Cancelled are final, and a future appointment cannot be Completed)
+- Status changes follow `STATUS_FLOW` in `config.py` (Completed and Cancelled are final; an appointment cannot be completed before its scheduled end time)
 - Cannot delete a client, staff or service that still has appointment records
 - Duplicate client (same name and contact), staff name and service name are rejected
 - Every SQL statement uses `?` placeholders, including the search `LIKE` (with `%` and `_` escaped)
 - `try/except sqlite3.Error` around writes, plus custom 400, 404, 405 and 500 pages
 - CSRF token on every POST form; redirect targets are restricted to local paths
+- Random session secret fallback; debug mode is off by default; session cookies are HTTP-only and `SameSite=Lax`
+- Runtime database, SQLite journals, environment files, Python caches, and virtual environments are ignored by Git
 - Forms use `novalidate` on purpose, so the server's messages are the ones the user sees
+
+HTML templates use Jinja autoescaping. JavaScript renders API values using `textContent`, and write queries use parameterized SQL. The app does not implement user accounts or staff authorization; deploy it only in a trusted environment until authentication and role-based access are added.
+
+Deleting a cancelled appointment is a permanent purge: its `appointment_history` rows are removed by the documented `ON DELETE CASCADE` relationship. Cancellation alone retains the appointment and its history.
 
 ## Demo script for the defense
 
@@ -180,4 +202,4 @@ Booking (`book_appointment`) and status changes (`change_status`) use the same p
 | Database design and SQL (15) | 5 tables, FKs, CHECKs, indexes, JOINs, aggregate counts, transaction |
 | Code quality and organization (10) | Separate modules, one job per file, comments |
 | Validation and error handling (10) | The section above, plus `test_app.py` |
-| User interface and defense (20) | Plain, consistent UI; status colors; demo script above |
+| User interface and defense (20) | Responsive clinic styling, keyboard navigation, status colors, light/dark theme, demo script above |

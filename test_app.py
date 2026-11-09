@@ -7,7 +7,9 @@ import os
 import shutil
 import sqlite3
 import tempfile
+import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 from unittest import mock
 
@@ -76,6 +78,97 @@ class BaseCase(unittest.TestCase):
         return self.conn.execute(sql, params).fetchone()
 
 
+class DatabaseMigrationTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.path = os.path.join(self.tmp, "legacy.db")
+        conn = db.connect(self.path)
+        conn.executescript(
+            "CREATE TABLE services (service_id INTEGER PRIMARY KEY, duration_minutes INTEGER NOT NULL);"
+            "CREATE TABLE staff_or_resources (resource_id INTEGER PRIMARY KEY, is_active INTEGER NOT NULL);"
+            "CREATE TABLE appointments (appointment_id INTEGER PRIMARY KEY, client_id INTEGER, "
+            "resource_id INTEGER, service_id INTEGER, appt_date TEXT, start_time TEXT, end_time TEXT, status TEXT);"
+            "INSERT INTO services VALUES (1, 30); INSERT INTO services VALUES (2, 60);"
+            "INSERT INTO staff_or_resources VALUES (1, 1);"
+        )
+        self.conn = conn
+
+    def tearDown(self):
+        self.conn.close()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_migration_preserves_existing_data_and_installs_guards(self):
+        self.conn.execute(
+            "INSERT INTO appointments (client_id, resource_id, service_id, appt_date, "
+            "start_time, end_time, status) VALUES (1, 1, 1, '2030-01-02', '10:00', '10:30', 'Pending')"
+        )
+        before = self.conn.execute("SELECT COUNT(*) FROM appointments").fetchone()[0]
+        self.conn.close()
+
+        db.migrate_db(self.path)
+
+        migrated = db.connect(self.path)
+        try:
+            self.assertEqual(migrated.execute("SELECT COUNT(*) FROM appointments").fetchone()[0], before)
+            self.assertEqual(migrated.execute("SELECT duration_minutes FROM appointments").fetchone()[0], 30)
+            with self.assertRaises(sqlite3.IntegrityError):
+                migrated.execute(
+                    "INSERT INTO appointments (client_id, resource_id, service_id, appt_date, "
+                    "start_time, end_time, status) VALUES (2, 1, 1, '2030-01-02', '10:00', '10:30', 'Pending')"
+                )
+            with self.assertRaises(sqlite3.IntegrityError):
+                migrated.execute(
+                    "INSERT INTO appointments (client_id, resource_id, service_id, appt_date, "
+                    "start_time, end_time, status) VALUES (2, 1, 1, '2030-02-30', '11:00', '11:30', 'Pending')"
+                )
+        finally:
+            migrated.close()
+        self.conn = db.connect(self.path)
+
+    def test_migration_refuses_to_hide_legacy_overlaps(self):
+        self.conn.execute(
+            "INSERT INTO appointments (client_id, resource_id, service_id, appt_date, "
+            "start_time, end_time, status) VALUES (1, 1, 2, '2030-01-02', '10:00', '11:00', 'Pending')"
+        )
+        self.conn.execute(
+            "INSERT INTO appointments (client_id, resource_id, service_id, appt_date, "
+            "start_time, end_time, status) VALUES (2, 1, 2, '2030-01-02', '10:30', '11:30', 'Confirmed')"
+        )
+        self.conn.close()
+
+        with self.assertRaisesRegex(RuntimeError, "overlapping active appointments"):
+            db.migrate_db(self.path)
+
+        conn = db.connect(self.path)
+        try:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM appointments").fetchone()[0], 2)
+            trigger_count = conn.execute(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' "
+                "AND name LIKE 'appointments_no_overlap_%'"
+            ).fetchone()[0]
+            self.assertEqual(trigger_count, 0)
+        finally:
+            conn.close()
+        self.conn = db.connect(self.path)
+
+    def test_migration_refuses_invalid_legacy_calendar_dates_without_changes(self):
+        self.conn.execute(
+            "INSERT INTO appointments (client_id, resource_id, service_id, appt_date, "
+            "start_time, end_time, status) VALUES (1, 1, 1, '2030-02-30', '10:00', '10:30', 'Pending')"
+        )
+        self.conn.close()
+        with self.assertRaisesRegex(RuntimeError, "invalid calendar date"):
+            db.migrate_db(self.path)
+        conn = db.connect(self.path)
+        try:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM appointments").fetchone()[0], 1)
+            columns = {row["name"] for row in conn.execute("PRAGMA table_info(appointments)")}
+            self.assertNotIn("duration_minutes", columns)
+        finally:
+            conn.close()
+        self.conn = db.connect(self.path)
+
+
 class DoubleBookingTests(BaseCase):
     def test_same_slot_same_resource_is_rejected(self):
         self.book(start="10:00")
@@ -132,6 +225,91 @@ class DoubleBookingTests(BaseCase):
     def test_inactive_resource_cannot_be_booked(self):
         with self.assertRaises(scheduling.ScheduleError):
             self.book(resource_id=3)
+
+    def test_database_trigger_rejects_partial_overlap_on_insert_and_update(self):
+        first = self.book(start="10:00", service_id=2)  # 10:00-11:00
+        second = self.book(client_id=2, start="13:00", service_id=1)
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.conn.execute(
+                "INSERT INTO appointments (client_id, resource_id, service_id, appt_date, "
+                "start_time, end_time, status) VALUES (2, 1, 1, ?, '10:30', '11:00', 'Pending')",
+                (self.day,),
+            )
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.conn.execute(
+                "UPDATE appointments SET start_time = '10:30', end_time = '11:00' "
+                "WHERE appointment_id = ?", (second,)
+            )
+        self.assertEqual(self.one("SELECT start_time FROM appointments WHERE appointment_id = ?",
+                                  (second,))[0], "13:00")
+        self.assertEqual(self.one("SELECT COUNT(*) FROM appointments WHERE appointment_id = ?",
+                                  (first,))[0], 1)
+
+    def test_database_rejects_invalid_calendar_times_and_service_duration(self):
+        invalid_slots = [
+            ("2030-02-30", "10:00", "10:30", 1),
+            ("2030-02-28", "29:30", "30:00", 1),
+            ("2030-02-28", "10:00", "11:00", 2),  # ends must match selected service duration
+        ]
+        for appt_date, start, end, service_id in invalid_slots:
+            with self.subTest(appt_date=appt_date, start=start, end=end):
+                with self.assertRaises(sqlite3.IntegrityError):
+                    self.conn.execute(
+                        "INSERT INTO appointments (client_id, resource_id, service_id, appt_date, "
+                        "start_time, end_time, status) VALUES (1, 1, ?, ?, ?, ?, 'Pending')",
+                        (service_id, appt_date, start, end),
+                    )
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.conn.execute(
+                "INSERT INTO appointments (client_id, resource_id, service_id, appt_date, "
+                "start_time, end_time, status) VALUES (1, 3, 1, ?, '10:00', '10:30', 'Pending')",
+                (self.day,),
+            )
+
+    def test_database_update_trigger_excludes_the_appointment_itself(self):
+        appt_id = self.book(start="10:00", service_id=2)
+        self.conn.execute(
+            "UPDATE appointments SET start_time = '10:30', end_time = '11:30' "
+            "WHERE appointment_id = ?", (appt_id,)
+        )
+        row = self.one("SELECT start_time, end_time FROM appointments WHERE appointment_id = ?",
+                       (appt_id,))
+        self.assertEqual((row["start_time"], row["end_time"]), ("10:30", "11:30"))
+
+    def test_service_duration_edits_do_not_change_existing_appointment_snapshot(self):
+        appt_id = self.book(start="10:00", service_id=2)
+        self.conn.execute("UPDATE services SET duration_minutes = 90 WHERE service_id = 2")
+        row = self.one(
+            "SELECT start_time, end_time, duration_minutes FROM appointments WHERE appointment_id = ?",
+            (appt_id,),
+        )
+        self.assertEqual((row["start_time"], row["end_time"], row["duration_minutes"]),
+                         ("10:00", "11:00", 60))
+        scheduling.reschedule_appointment(self.conn, appt_id, 1, self.day, "13:00")
+        row = self.one("SELECT end_time, duration_minutes FROM appointments WHERE appointment_id = ?",
+                       (appt_id,))
+        self.assertEqual((row["end_time"], row["duration_minutes"]), ("14:00", 60))
+
+    def test_simultaneous_bookings_for_same_slot_serialize_safely(self):
+        gate = threading.Barrier(2)
+
+        def attempt(client_id):
+            conn = db.connect(self.path)
+            try:
+                gate.wait(timeout=5)
+                scheduling.book_appointment(
+                    conn, client_id, 1, 1, self.day, "10:00", ""
+                )
+                return "booked"
+            except scheduling.ScheduleError:
+                return "conflict"
+            finally:
+                conn.close()
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            outcomes = list(pool.map(attempt, (1, 2)))
+        self.assertCountEqual(outcomes, ["booked", "conflict"])
+        self.assertEqual(self.one("SELECT COUNT(*) FROM appointments WHERE status != 'Cancelled'")[0], 1)
 
     def test_booking_cannot_run_past_closing_time(self):
         with self.assertRaises(scheduling.ScheduleError) as ctx:
@@ -214,6 +392,26 @@ class StatusTests(BaseCase):
         with self.assertRaises(scheduling.ScheduleError):
             scheduling.change_status(self.conn, appt_id, "Completed")
 
+    def test_same_day_appointment_cannot_be_completed_before_end_time(self):
+        day = date.today()
+        appt_date = day.isoformat()
+        before_end = datetime(day.year, day.month, day.day, 10, 29)
+        at_end = datetime(day.year, day.month, day.day, 10, 30)
+        self.conn.execute(
+            "INSERT INTO appointments (client_id, resource_id, service_id, appt_date, start_time, "
+            "end_time, status) VALUES (1, 1, 1, ?, '10:00', '10:30', 'Confirmed')", (appt_date,)
+        )
+        appt_id = self.one("SELECT appointment_id FROM appointments ORDER BY appointment_id DESC")[0]
+        with self.assertRaisesRegex(scheduling.ScheduleError, "before its scheduled end time"):
+            scheduling.change_status(
+                self.conn, appt_id, "Completed", now=before_end
+            )
+        scheduling.change_status(
+            self.conn, appt_id, "Completed", now=at_end
+        )
+        self.assertEqual(self.one("SELECT status FROM appointments WHERE appointment_id = ?",
+                                  (appt_id,))[0], "Completed")
+
     def test_unknown_status_is_rejected(self):
         appt_id = self.book()
         with self.assertRaises(scheduling.ScheduleError):
@@ -224,8 +422,14 @@ class StatusTests(BaseCase):
         with self.assertRaises(scheduling.ScheduleError):
             scheduling.delete_appointment(self.conn, appt_id)
         scheduling.change_status(self.conn, appt_id, "Cancelled")
+        history_count = self.one(
+            "SELECT COUNT(*) FROM appointment_history WHERE appointment_id = ?", (appt_id,)
+        )[0]
+        self.assertGreater(history_count, 0)
         scheduling.delete_appointment(self.conn, appt_id)
         self.assertEqual(self.one("SELECT COUNT(*) FROM appointments")[0], 0)
+        self.assertEqual(self.one("SELECT COUNT(*) FROM appointment_history WHERE appointment_id = ?",
+                                  (appt_id,))[0], 0)
 
 
 class ValidatorTests(unittest.TestCase):
@@ -258,6 +462,9 @@ class ValidatorTests(unittest.TestCase):
         _, errors = validators.validate_appointment(
             self.form(appt_date="2026-13-45", start_time="25:99"), self.NOW)
         self.assertEqual(len(errors), 2)
+
+    def test_impossible_calendar_date_rejected(self):
+        self.assertIsNone(validators.parse_date("2026-02-30"))
 
     def test_time_outside_clinic_hours_rejected(self):
         _, errors = validators.validate_appointment(self.form(start_time="20:00"), self.NOW)
@@ -298,6 +505,16 @@ class WebTests(BaseCase):
         for url in urls:
             with self.subTest(url=url):
                 self.assertEqual(self.client.get(url).status_code, 200)
+
+    def test_mobile_navigation_markup_and_active_page_are_accessible(self):
+        response = self.client.get("/appointments")
+        self.assertIn(b'id="nav-toggle" type="button"', response.data)
+        self.assertIn(b'aria-controls="primary-nav"', response.data)
+        self.assertIn(b'aria-expanded="false"', response.data)
+        self.assertIn(b'aria-label="Open navigation"', response.data)
+        self.assertIn(b'<nav class="nav" id="primary-nav" aria-label="Main">', response.data)
+        self.assertIn(b'id="primary-nav" aria-label="Main"', response.data)
+        self.assertIn(b'href="/appointments" class="active" aria-current="page"', response.data)
 
     def test_booking_through_form_then_double_booking_blocked(self):
         first = self.post("/appointments/new", self.booking_form(), follow_redirects=True)
@@ -362,6 +579,15 @@ class WebTests(BaseCase):
         self.assertEqual(self.one("SELECT COUNT(*) FROM clients")[0], 2)
         self.assertNotIn(b"Juan Dela Cruz", self.client.get("/clients", query_string={"q": "' OR 1=1 --"}).data)
 
+    def test_client_values_are_autoescaped_in_templates(self):
+        self.conn.execute(
+            "INSERT INTO clients (name, contact) VALUES (?, ?)",
+            ("<script>alert(1)</script>", "09170000003"),
+        )
+        response = self.client.get("/clients")
+        self.assertIn(b"&lt;script&gt;alert(1)&lt;/script&gt;", response.data)
+        self.assertNotIn(b"<script>alert(1)</script>", response.data)
+
     def test_duplicate_client_rejected(self):
         response = self.post(
             "/clients/new", {"name": "juan dela cruz", "contact": "09171234567"}, follow_redirects=True)
@@ -384,9 +610,15 @@ class WebTests(BaseCase):
 
     def test_resource_and_service_crud_and_delete_rules(self):
         self.post("/resources/new", {"name": "Dr. Lim", "role": "Dentist", "is_active": "1"})
-        self.assertIsNotNone(self.one("SELECT 1 FROM staff_or_resources WHERE name = 'Dr. Lim'"))
+        resource_id = self.one("SELECT resource_id FROM staff_or_resources WHERE name = 'Dr. Lim'")[0]
+        self.post(f"/resources/{resource_id}/edit", {
+            "name": "Dr. Lim Cruz", "role": "Dental Hygienist", "is_active": "1"
+        })
+        self.assertIsNotNone(self.one("SELECT 1 FROM staff_or_resources WHERE name = 'Dr. Lim Cruz'"))
         self.post("/services/new", {"name": "Whitening", "duration_minutes": "90"})
-        self.assertIsNotNone(self.one("SELECT 1 FROM services WHERE name = 'Whitening'"))
+        service_id = self.one("SELECT service_id FROM services WHERE name = 'Whitening'")[0]
+        self.post(f"/services/{service_id}/edit", {"name": "Brightening", "duration_minutes": "60"})
+        self.assertIsNotNone(self.one("SELECT 1 FROM services WHERE name = 'Brightening'"))
 
         self.book(resource_id=1, service_id=2)
         blocked = self.post("/resources/1/delete", follow_redirects=True)
@@ -394,10 +626,33 @@ class WebTests(BaseCase):
         blocked = self.post("/services/2/delete", follow_redirects=True)
         self.assertIn(b"cannot be deleted", blocked.data)
 
+    def test_pagination_keeps_filters_and_returns_remaining_records(self):
+        for offset in range(21):
+            day = date.today() + timedelta(days=offset + 1)
+            self.conn.execute(
+                "INSERT INTO appointments (client_id, resource_id, service_id, appt_date, "
+                "start_time, end_time, status) VALUES (1, 1, 1, ?, '10:00', '10:30', 'Pending')",
+                (day.isoformat(),),
+            )
+        first = self.client.get("/appointments?status=Pending")
+        second = self.client.get("/appointments?status=Pending&page=2")
+        self.assertIn(b"21 appointments found", first.data)
+        self.assertIn(b"Page 1 of 2", first.data)
+        self.assertIn(b"Page 2 of 2", second.data)
+        self.assertIn(b"21 appointments found", second.data)
+
+    def test_session_cookie_is_http_only_and_same_site(self):
+        response = self.client.get("/clients/new")
+        cookie = response.headers.get("Set-Cookie", "")
+        self.assertIn("HttpOnly", cookie)
+        self.assertIn("SameSite=Lax", cookie)
+
     def test_booked_slots_api_hides_cancelled(self):
         appt_id = self.book(start="10:00")
         url = f"/api/booked-slots?resource_id=1&date={self.day}"
-        self.assertEqual(len(self.client.get(url).get_json()["slots"]), 1)
+        payload = self.client.get(url).get_json()
+        self.assertEqual(len(payload["slots"]), 1)
+        self.assertNotIn("client", payload["slots"][0])
         scheduling.change_status(self.conn, appt_id, "Cancelled")
         self.assertEqual(len(self.client.get(url).get_json()["slots"]), 0)
 

@@ -31,8 +31,14 @@ from formatting import fmt_date, fmt_time
 # 1. SETUP AT HELPERS
 # =====================================================================
 app = Flask(__name__)
-app.config["SECRET_KEY"] = config.SECRET_KEY
-app.config["DATABASE"] = config.DB_PATH
+app.config.update(
+    SECRET_KEY=config.SECRET_KEY,
+    DATABASE=config.DB_PATH,
+    DEBUG=config.DEBUG,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=config.SESSION_COOKIE_SECURE,
+)
 db.init_app(app)
 
 DB_ERROR = "A database error occurred and nothing was saved. Please try again."
@@ -43,7 +49,7 @@ APPT_SELECT = """
            a.service_id,
            c.client_id, c.name AS client_name, c.contact,
            r.resource_id, r.name AS resource_name,
-           s.name AS service_name, s.duration_minutes
+           s.name AS service_name, a.duration_minutes
     FROM appointments a
     JOIN clients c ON c.client_id = a.client_id
     JOIN staff_or_resources r ON r.resource_id = a.resource_id
@@ -59,6 +65,7 @@ app.jinja_env.globals.update(
     ACTION_LABELS=config.ACTION_LABELS,
     PRIMARY_NEXT_STATUS=config.PRIMARY_NEXT_STATUS,
     today=lambda: date.today().isoformat(),
+    current_time=lambda: datetime.now().strftime("%H:%M"),
 )
 app.add_template_filter(fmt_date, "fmt_date")
 app.add_template_filter(fmt_time, "fmt_time")
@@ -69,6 +76,9 @@ def ensure_database():
     path = app.config["DATABASE"]
     if not os.path.exists(path):
         db.init_db(path, seed=True)
+    else:
+        # Add non-destructive database guards to existing installations.
+        db.migrate_db(path)
 
 
 ensure_database()
@@ -768,7 +778,7 @@ def api_booked_slots():
         note=note,
         slots=[
             {"start": fmt_time(r["start_time"]), "end": fmt_time(r["end_time"]),
-             "client": r["client_name"], "service": r["service_name"], "status": r["status"]}
+             "service": r["service_name"], "status": r["status"]}
             for r in rows
         ],
     )
@@ -808,4 +818,4 @@ def server_error(error):
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=app.config["DEBUG"])

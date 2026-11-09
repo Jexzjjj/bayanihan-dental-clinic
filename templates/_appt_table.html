@@ -1,6 +1,6 @@
 {# Table ng appointments na ginagamit sa dashboard, listahan, at client page #}
 {% macro appt_table(rows, next_url, show_date=true, show_client=true, empty_text='No appointments found.') %}
-<div class="table-wrap">
+<div class="table-wrap" role="region" aria-label="Appointments" tabindex="0">
   <table class="data">
     <thead>
       <tr>
@@ -27,7 +27,7 @@
         <td class="actions">
           {% set ns = namespace(primary=None) %}
           {% set candidate = PRIMARY_NEXT_STATUS.get(a.status) %}
-          {% if candidate and candidate in STATUS_FLOW[a.status] and not (candidate == 'Completed' and a.appt_date > today()) %}
+          {% if candidate and candidate in STATUS_FLOW[a.status] and not (candidate == 'Completed' and (a.appt_date > today() or (a.appt_date == today() and a.end_time > current_time()))) %}
             {% set ns.primary = candidate %}
           {% endif %}
 
@@ -46,7 +46,7 @@
               <summary class="btn btn-sm" aria-label="More actions for {{ a.client_name }}">More &#9662;</summary>
               <div class="menu-panel">
                 {% for nxt in STATUS_FLOW[a.status] %}
-                  {% if nxt != ns.primary and not (nxt == 'Completed' and a.appt_date > today()) %}
+                  {% if nxt != ns.primary and not (nxt == 'Completed' and (a.appt_date > today() or (a.appt_date == today() and a.end_time > current_time()))) %}
                   <form method="post" action="{{ url_for('appointments_status', appointment_id=a.appointment_id) }}"
                         {% if nxt == 'Cancelled' %}data-confirm="Cancel the appointment of {{ a.client_name }} on {{ a.appt_date|fmt_date }}, {{ a.start_time|fmt_time }}?"{% endif %}>
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
