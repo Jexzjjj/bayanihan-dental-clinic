@@ -96,10 +96,10 @@ def load(conn, today=None):
         duration = SERVICES[service_no - 1][1]
         cursor = conn.execute(
             "INSERT INTO appointments "
-            "(client_id, resource_id, service_id, appt_date, start_time, end_time, status, notes) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "(client_id, resource_id, service_id, appt_date, start_time, end_time, "
+            "duration_minutes, status, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (client_no, resource_no, service_no, workday(today, offset).isoformat(),
-             start, add_minutes(start, duration), status, notes),
+             start, add_minutes(start, duration), duration, status, notes),
         )
         conn.execute(
             "INSERT INTO appointment_history (appointment_id, action, old_value, new_value) "

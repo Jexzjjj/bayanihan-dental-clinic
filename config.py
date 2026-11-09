@@ -4,14 +4,21 @@ Dito lahat ng pwedeng baguhin (oras ng clinic, status, atbp.) para iisang
 lugar lang ang kailangan i-edit kapag may nagbago.
 """
 import os
+from secrets import token_hex
 from datetime import datetime, timedelta
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 CLINIC_NAME = "Bayanihan Dental Clinic"
 
-# pang-sign ng session at flash messages; sa totoong deployment, palitan ito
-SECRET_KEY = os.environ.get("SECRET_KEY", "dev-only-secret-palitan-mo-ito")
+# A random per-process fallback keeps local development usable without a weak
+# default. Deployments should set SECRET_KEY so sessions survive restarts/workers.
+SECRET_KEY = os.environ.get("SECRET_KEY") or token_hex(32)
+
+DEBUG = os.environ.get("FLASK_DEBUG", "").strip().lower() in {"1", "true", "yes"}
+SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "").strip().lower() in {
+    "1", "true", "yes"
+}
 
 # dito naka-save yung SQLite file; pwedeng palitan gamit environment variable
 DB_PATH = os.environ.get("APPOINTMENT_DB", os.path.join(BASE_DIR, "appointments.db"))

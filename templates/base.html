@@ -4,13 +4,22 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{% endblock %} - {{ CLINIC_NAME }}</title>
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem("clinic-theme");
+        var theme = saved || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        document.documentElement.dataset.theme = theme;
+      } catch (_) {
+        document.documentElement.dataset.theme = "light";
+      }
+    })();
+  </script>
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
   {# (label, endpoint, mga endpoint na magpapa-active sa link na ito) #}
   {% set nav_items = [
     ('Dashboard', 'dashboard', ['dashboard']),
@@ -30,15 +39,26 @@
         </svg>
         {{ CLINIC_NAME }}
       </a>
-      <nav class="nav" aria-label="Main">
+      <nav class="nav" id="primary-nav" aria-label="Main">
         {% for label, endpoint, group in nav_items %}
           <a href="{{ url_for(endpoint) }}"{% if request.endpoint in group %} class="active" aria-current="page"{% endif %}>{{ label }}</a>
         {% endfor %}
       </nav>
+      <div class="header-actions">
+        <button class="theme-toggle" type="button" id="theme-toggle" aria-label="Switch to dark theme" title="Switch theme">
+          <span aria-hidden="true" class="theme-toggle-icon">◐</span>
+          <span class="theme-toggle-label">Dark theme</span>
+        </button>
+        <button class="nav-toggle" id="nav-toggle" type="button" aria-controls="primary-nav"
+                aria-expanded="false" aria-label="Open navigation" hidden>
+          <span class="nav-toggle-bars" aria-hidden="true"><span></span><span></span><span></span></span>
+          <span class="sr-only">Open navigation</span>
+        </button>
+      </div>
     </div>
   </header>
 
-  <main class="wrap">
+  <main class="wrap" id="main-content">
     {% block content %}{% endblock %}
   </main>
 

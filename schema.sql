@@ -43,10 +43,22 @@ CREATE TABLE appointments (
     client_id      INTEGER NOT NULL REFERENCES clients (client_id) ON DELETE RESTRICT,
     resource_id    INTEGER NOT NULL REFERENCES staff_or_resources (resource_id) ON DELETE RESTRICT,
     service_id     INTEGER NOT NULL REFERENCES services (service_id) ON DELETE RESTRICT,
-    appt_date      TEXT NOT NULL
-        CHECK (appt_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
-    start_time     TEXT NOT NULL CHECK (start_time GLOB '[0-2][0-9]:[0-5][0-9]'),
-    end_time       TEXT NOT NULL CHECK (end_time GLOB '[0-2][0-9]:[0-5][0-9]'),
+    appt_date      TEXT NOT NULL CHECK (
+        appt_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+        AND date(appt_date, '+0 days') = appt_date
+    ),
+    start_time     TEXT NOT NULL CHECK (
+        start_time GLOB '[0-2][0-9]:[0-5][0-9]'
+        AND substr(start_time, 1, 2) BETWEEN '00' AND '23'
+        AND substr(start_time, 4, 2) IN ('00', '30')
+    ),
+    end_time       TEXT NOT NULL CHECK (
+        end_time GLOB '[0-2][0-9]:[0-5][0-9]'
+        AND substr(end_time, 1, 2) BETWEEN '00' AND '23'
+        AND substr(end_time, 4, 2) IN ('00', '30')
+    ),
+    duration_minutes INTEGER NOT NULL DEFAULT 30
+        CHECK (duration_minutes BETWEEN 30 AND 240 AND duration_minutes % 30 = 0),
     status         TEXT NOT NULL DEFAULT 'Pending'
         CHECK (status IN ('Pending', 'Confirmed', 'Completed', 'Cancelled')),
     notes          TEXT,
@@ -57,13 +69,80 @@ CREATE TABLE appointments (
 -- pampabilis ng conflict check at ng listing
 CREATE INDEX idx_appt_resource_slot ON appointments (resource_id, appt_date, start_time);
 CREATE INDEX idx_appt_date_status   ON appointments (appt_date, status);
+CREATE INDEX idx_appt_client_date   ON appointments (client_id, appt_date);
+CREATE INDEX idx_appt_service       ON appointments (service_id);
 
--- huling depensa laban sa double booking: kahit makalusot sa Python check,
--- hindi papayagan ng database yung dalawang active na may parehong start time
--- yung Cancelled hindi kasama, kaya nababakante agad ang slot
+-- Fast exact-start guard plus triggers below for all overlapping active slots.
 CREATE UNIQUE INDEX uq_active_slot
     ON appointments (resource_id, appt_date, start_time)
     WHERE status != 'Cancelled';
+
+-- SQLite has no exclusion constraint, so enforce interval overlap at the
+-- database layer too. These guards also cover direct SQL writes and reschedules.
+CREATE TRIGGER appointments_no_overlap_insert
+BEFORE INSERT ON appointments
+WHEN NEW.status != 'Cancelled' AND EXISTS (
+    SELECT 1 FROM appointments a
+    WHERE a.resource_id = NEW.resource_id
+      AND a.appt_date = NEW.appt_date
+      AND a.status != 'Cancelled'
+      AND NEW.start_time < a.end_time
+      AND NEW.end_time > a.start_time
+)
+BEGIN
+    SELECT RAISE(ABORT, 'appointment overlaps an existing booking');
+END;
+
+CREATE TRIGGER appointments_no_overlap_update
+BEFORE UPDATE OF resource_id, appt_date, start_time, end_time, status ON appointments
+WHEN NEW.status != 'Cancelled' AND EXISTS (
+    SELECT 1 FROM appointments a
+    WHERE a.resource_id = NEW.resource_id
+      AND a.appt_date = NEW.appt_date
+      AND a.appointment_id != NEW.appointment_id
+      AND a.status != 'Cancelled'
+      AND NEW.start_time < a.end_time
+      AND NEW.end_time > a.start_time
+)
+BEGIN
+    SELECT RAISE(ABORT, 'appointment overlaps an existing booking');
+END;
+
+-- Verify true calendar/time values and the appointment's stored duration.
+CREATE TRIGGER appointments_validate_insert
+BEFORE INSERT ON appointments
+WHEN date(NEW.appt_date, '+0 days') IS NOT NEW.appt_date
+  OR strftime('%H:%M', '2000-01-01 ' || NEW.start_time) IS NOT NEW.start_time
+  OR strftime('%H:%M', '2000-01-01 ' || NEW.end_time) IS NOT NEW.end_time
+  OR substr(NEW.start_time, 4, 2) NOT IN ('00', '30')
+  OR substr(NEW.end_time, 4, 2) NOT IN ('00', '30')
+  OR (SELECT is_active FROM staff_or_resources WHERE resource_id = NEW.resource_id) != 1
+  OR NEW.end_time <= NEW.start_time
+  OR (CAST(substr(NEW.end_time, 1, 2) AS INTEGER) * 60 + CAST(substr(NEW.end_time, 4, 2) AS INTEGER))
+     - (CAST(substr(NEW.start_time, 1, 2) AS INTEGER) * 60 + CAST(substr(NEW.start_time, 4, 2) AS INTEGER))
+     != NEW.duration_minutes
+  OR NEW.duration_minutes != (SELECT duration_minutes FROM services WHERE service_id = NEW.service_id)
+BEGIN
+    SELECT RAISE(ABORT, 'invalid appointment date, time, or duration');
+END;
+
+CREATE TRIGGER appointments_validate_update
+BEFORE UPDATE OF resource_id, service_id, appt_date, start_time, end_time, duration_minutes ON appointments
+WHEN date(NEW.appt_date, '+0 days') IS NOT NEW.appt_date
+  OR strftime('%H:%M', '2000-01-01 ' || NEW.start_time) IS NOT NEW.start_time
+  OR strftime('%H:%M', '2000-01-01 ' || NEW.end_time) IS NOT NEW.end_time
+  OR substr(NEW.start_time, 4, 2) NOT IN ('00', '30')
+  OR substr(NEW.end_time, 4, 2) NOT IN ('00', '30')
+  OR (SELECT is_active FROM staff_or_resources WHERE resource_id = NEW.resource_id) != 1
+  OR NEW.end_time <= NEW.start_time
+  OR (CAST(substr(NEW.end_time, 1, 2) AS INTEGER) * 60 + CAST(substr(NEW.end_time, 4, 2) AS INTEGER))
+     - (CAST(substr(NEW.start_time, 1, 2) AS INTEGER) * 60 + CAST(substr(NEW.start_time, 4, 2) AS INTEGER))
+     != NEW.duration_minutes
+  OR (NEW.service_id != OLD.service_id AND
+      NEW.duration_minutes != (SELECT duration_minutes FROM services WHERE service_id = NEW.service_id))
+BEGIN
+    SELECT RAISE(ABORT, 'invalid appointment date, time, or duration');
+END;
 
 -- audit trail: dito nilalagay kung ano ang nagbago at kailan
 CREATE TABLE appointment_history (

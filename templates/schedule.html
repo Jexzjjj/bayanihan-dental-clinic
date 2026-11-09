@@ -24,7 +24,7 @@
   <p class="muted">The clinic is closed on this day.</p>
 {% endif %}
 
-<div class="table-wrap">
+<div class="table-wrap schedule-table-wrap" role="region" aria-label="Daily appointment schedule" tabindex="0">
 <table class="grid">
   <thead>
     <tr>
@@ -53,7 +53,10 @@
           <td>
             {% if can_book %}
               <a class="slot-free" title="Book {{ row.time|fmt_time }}"
-                 href="{{ url_for('appointments_new', resource_id=cell.resource_id, appt_date=day, start_time=row.time) }}"></a>
+                 aria-label="Book {{ row.time|fmt_time }} with {{ resources[loop.index0].name }}"
+                 href="{{ url_for('appointments_new', resource_id=cell.resource_id, appt_date=day, start_time=row.time) }}">
+                <span class="sr-only">Book {{ row.time|fmt_time }} with {{ resources[loop.index0].name }}</span>
+              </a>
             {% endif %}
           </td>
         {% endif %}

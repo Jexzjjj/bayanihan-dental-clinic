@@ -7,10 +7,10 @@
     {% for s in slots %}
     <li>
       <span class="slot-time">{{ s.start_time|fmt_time }} to {{ s.end_time|fmt_time }}</span>
-      <span class="slot-meta">{{ s.client_name }} / {{ s.service_name }}
+      <span class="slot-meta">{{ s.service_name }}
         <span class="badge badge-{{ s.status|lower }}">{{ s.status }}</span></span>
     </li>
     {% endfor %}
   </ul>
-  <div class="muted" id="slots-note">{{ slots_note }}</div>
+  <div class="muted" id="slots-note" role="status" aria-live="polite">{{ slots_note }}</div>
 </aside>

@@ -14,7 +14,7 @@
   {% if appt.notes %}<dt>Notes</dt><dd>{{ appt.notes }}</dd>{% endif %}
 </dl>
 
-<div class="table-wrap">
+<div class="table-wrap" role="region" aria-label="Appointment history" tabindex="0">
   <table class="data">
     <thead><tr><th>When</th><th>Action</th><th>From</th><th>To</th></tr></thead>
     <tbody>

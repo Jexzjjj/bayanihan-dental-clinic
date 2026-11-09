@@ -14,7 +14,7 @@
     <input type="hidden" name="then" value="{{ then }}">
 
     {{ field('Full name', 'name', form.get('name', ''), required=true, maxlength=100, placeholder='e.g. Juan Dela Cruz') }}
-    {{ field('Contact number', 'contact', form.get('contact', ''), required=true, maxlength=20,
+    {{ field('Contact number', 'contact', form.get('contact', ''), type='tel', required=true, maxlength=20,
              hint='Mobile or landline, 7 to 13 digits. Example: 09171234567', placeholder='09171234567') }}
     {{ field('Email (optional)', 'email', form.get('email', ''), type='email', maxlength=100) }}
 

@@ -18,7 +18,7 @@
 
 <p class="result-count">{{ clients|length }} client{{ '' if clients|length == 1 else 's' }}{% if q %} matching "{{ q }}"{% endif %}</p>
 
-<div class="table-wrap">
+<div class="table-wrap" role="region" aria-label="Client records" tabindex="0">
   <table class="data data-fixed">
     <colgroup>
       <col style="width: 17%">
