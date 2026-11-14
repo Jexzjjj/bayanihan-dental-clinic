@@ -71,14 +71,42 @@ app.add_template_filter(fmt_date, "fmt_date")
 app.add_template_filter(fmt_time, "fmt_time")
 
 
+
 def ensure_database():
-    """Kapag wala pang database file, gumawa agad (may sample data) para derecho na ang takbo."""
+    """Initialize an empty database; never overwrite an existing installation."""
     path = app.config["DATABASE"]
-    if not os.path.exists(path):
+
+    conn = sqlite3.connect(path)
+    try:
+        tables = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+    finally:
+        conn.close()
+
+    required_tables = {
+        "clients",
+        "staff_or_resources",
+        "services",
+        "appointments",
+    }
+
+    if not tables:
+        # Genuinely empty database: safe to initialize.
         db.init_db(path, seed=True)
-    else:
-        # Add non-destructive database guards to existing installations.
+    elif required_tables.issubset(tables):
+        # Existing installation: apply non-destructive migrations.
         db.migrate_db(path)
+    else:
+        missing = required_tables - tables
+        raise RuntimeError(
+            f"Database schema is incomplete. Missing tables: {', '.join(sorted(missing))}. "
+            "Database was not modified."
+        )
+
 
 
 ensure_database()
